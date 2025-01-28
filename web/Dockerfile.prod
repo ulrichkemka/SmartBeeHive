@@ -1,0 +1,40 @@
+#
+# Stage 1: React production build
+#
+FROM node:19-alpine3.16 as web
+
+# Create app directory
+WORKDIR /web
+
+# Install app dependencies
+COPY package*.json ./
+RUN npm install -g npm
+
+COPY . .
+
+ARG VITE_REACT_APP_API_URL
+RUN npm run build
+
+#
+# Stage 2: Nginx as a proxy & static file server
+#
+FROM nginx:1.23.3-alpine
+
+# Set working directory to nginx asset directory
+WORKDIR /usr/share/nginx/html
+
+# RUN apt-get update && apt-get install -y certbot python3-certbot-nginx vim
+
+# Remove default nginx configuration
+RUN rm /etc/nginx/conf.d/*
+
+# Remove default nginx static assets
+RUN rm -rf /usr/share/nginx/html/*
+
+# Copy static assets from builder stage
+COPY --from=web /web/dist .
+
+# # Update the nginx config with our own config file
+# COPY --from=web /web/docker-setup/nginx/mern-template.conf /etc/nginx/conf.d/
+
+CMD ["nginx", "-g", "daemon off;"]

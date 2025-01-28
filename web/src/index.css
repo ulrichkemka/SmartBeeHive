@@ -1,0 +1,12 @@
+:root {
+  background-color: #ffffff;
+}
+
+/* Legacy css rules to keep up with the old style of elastic ui after updating components. */
+.euiPageSideBar {
+  margin-right: 16px;
+}
+
+/* .euiPageHeader {
+  margin-bottom: 16px;
+} */

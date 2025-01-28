@@ -1,0 +1,71 @@
+ssh -i ./sbh-key.pem sbh@smartbeehive.eastus.cloudapp.azure.com
+
+curl -L https://packages.gitlab.com/install/repositories/runner/gitlab-runner/script.deb.sh > script.deb.sh
+less script.deb.sh
+
+sudo bash script.deb.sh
+
+sudo apt install gitlab-runner
+systemctl status gitlab-runner
+
+sudo gitlab-runner register --url https://gitlab.com/ --registration-token GR1348941srBLKP39vtoj9Xe4ZzsT
+sudo gitlab-runner register -n --url https://gitlab.com/ --registration-token GR1348941srBLKP39vtoj9Xe4ZzsT --executor docker --description "Deployment Runner" --docker-image "docker:stable" --tag-list deployment --docker-privileged
+
+sudo adduser deployer
+sudo usermod -aG docker deployer
+
+
+//backup Dockerfile-backend
+FROM eclipse-temurin:17-jdk-alpine as build
+WORKDIR /backend
+
+COPY mvnw .
+COPY .mvn .mvn
+COPY pom.xml .
+COPY src src
+
+RUN ./mvnw install -DskipTests
+RUN mkdir -p target/dependency && (cd target/dependency; jar -xf ../*.jar)
+
+FROM eclipse-temurin:17-jdk-alpine
+VOLUME /tmp
+ARG DEPENDENCY=/backend/target/dependency
+COPY --from=build ${DEPENDENCY}/BOOT-INF/lib /app/lib
+COPY --from=build ${DEPENDENCY}/META-INF /app/META-INF
+COPY --from=build ${DEPENDENCY}/BOOT-INF/classes /app
+ENTRYPOINT ["java","-cp","app:app/lib/*","smartbeehive.Application"]
+
+
+FROM openjdk:17-alpine
+
+# Set the working directory to /backend
+WORKDIR /backend
+
+# ADD /target/*.jar smartbeehive-0.0.1-SNAPSHOT.jar
+
+COPY /target/*.jar /backend/smartbeehive-0.0.1-SNAPSHOT.jar
+
+
+# ENTRYPOINT ["java","-jar","/smartbeehive-0.0.1-SNAPSHOT.jar"]
+CMD ["java","-jar","/backend/smartbeehive-0.0.1-SNAPSHOT.jar"]
+
+
+
+deploy_staging_job:
+  stage: deploy
+  image: docker:stable
+  script:
+    - apk add --no-cache openssh-client py-pip python3-dev libffi-dev openssl-dev gcc libc-dev make
+    - pip install --upgrade pip
+    - pip install docker-compose
+    - export DOCKER_HOST=tcp://$PLAYWD.direct.labs.play-with-docker.com:2375
+    - docker-compose down
+    - docker-compose up -d
+  environment:
+    name: staging
+    url: http://$PLAYWD-8080.direct.labs.play-with-docker.com
+
+
+    https://www.youtube.com/watch?v=8aYNrBMekA4
+    https://spring.io/guides/topicals/spring-boot-docker/#a-better-dockerfile
+    https://www.digitalocean.com/community/tutorials/how-to-set-up-a-continuous-deployment-pipeline-with-gitlab-ci-cd-on-ubuntu-18-04#step-6-configuring-the-gitlab-ci-yml-file

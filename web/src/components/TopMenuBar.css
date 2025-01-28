@@ -1,0 +1,16 @@
+.euiHeader.il-top-menu-bar .euiHeaderLogo {
+  cursor: pointer;
+}
+
+.euiHeader.il-top-menu-bar .euiHeaderSectionItemButton {
+  font-size: inherit;
+}
+
+.logo-container {
+  display: flex;
+  align-items: center;
+}
+
+.logo-text {
+  margin-left: 8px; /* Ajustez la marge selon vos besoins */
+}

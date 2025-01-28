@@ -1,0 +1,118 @@
+stages:
+  - build_api
+  - package_api
+  - test_api
+  - test_frontend
+  - publish_frontend_api
+  - deploy_frontend_api
+
+cache:
+  paths:
+    - .m2/repository
+  key: "$CI_JOB_NAME"
+
+variables:
+  TAG_LATEST: $CI_REGISTRY_IMAGE/$CI_COMMIT_REF_NAME:latest
+  TAG_COMMIT: $CI_REGISTRY_IMAGE/$CI_COMMIT_REF_NAME:$CI_COMMIT_SHORT_SHA
+
+
+#--------------------------------------------------------------#
+#                        BUILD JOBS "API"                      #
+#--------------------------------------------------------------#
+
+maven-build_api:
+  image: maven:3.8.5-openjdk-17 
+  stage: build_api 
+  script: 
+    - cd "backend/"
+    - "mvn package -B" 
+  artifacts:
+    paths: 
+      - target/smartbeehive-0.0.1.jar
+
+
+#--------------------------------------------------------------#
+#                        PACKAGE JOBS "API"                    #
+#--------------------------------------------------------------#
+
+package_job_api:
+  image: openjdk:17-alpine
+  stage: package_api
+  services:
+    - docker:latest
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+  script:
+    - cd backend/
+    - apk add --no-cache docker
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
+    - ./mvnw install -PbuildDocker -DskipTests=true -DpushImage -Dhttps.protocols=TLSv1.2 -Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=WARN -Dorg.slf4j.simpleLogger.showDateTime=true -Djava.awt.headless=true --batch-mode --errors --fail-at-end --show-version -DinstallAtEnd=true -DdeployAtEnd=true
+
+
+#--------------------------------------------------------------#
+#                        TESTING JOBS "API JAVA"               #
+#--------------------------------------------------------------#
+
+api_java_unit-test:
+  image: maven:latest
+  stage: test_api
+  script:
+    - cd backend
+    - mvn test
+
+#--------------------------------------------------------------#
+#                        TESTING JOBS "WEB APP"                #
+#--------------------------------------------------------------#
+
+frontend_unit_tests_frontend:
+  stage: test_frontend
+  cache:
+    paths:
+      - web/node_modules/
+  image: node:19-slim
+  script:
+    - cd web
+    - npm install
+    - npm run test
+    - npm run coverage
+
+
+#--------------------------------------------------------------#
+#                 PUBLISH JOBS "WEB" and "BACKEND"             #
+#--------------------------------------------------------------#
+
+publish_job_frontend:
+  image: docker:latest
+  stage: publish_frontend_api
+  services:
+    - docker:dind
+  script:
+    - docker build -t $TAG_COMMIT -t $TAG_LATEST -f ./backend/Dockerfile .
+    - docker build -t $TAG_COMMIT -t $TAG_LATEST -f ./web/Dockerfile .
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
+    - docker push $TAG_COMMIT
+    - docker push $TAG_LATEST
+
+
+#--------------------------------------------------------------#
+#                DEPLOY JOBS "WEB" and "BACKEND"               #
+#--------------------------------------------------------------#
+
+deploy_job_frontent:
+  image: alpine:latest
+  stage: deploy_frontend_api
+  tags:
+    - deployment
+  script:
+    - chmod og= $ID_RSA
+    - apk update && apk add openssh-client
+    - ssh -i $ID_RSA -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_IP "docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY"
+    - ssh -i $ID_RSA -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_IP "docker pull $TAG_COMMIT"
+    - ssh -i $ID_RSA -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_IP "docker compose --env-file ./smartbeehive/docker.prod.env -f ./smartbeehive/docker-compose-prod.yml down"
+    - ssh -i $ID_RSA -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_IP "docker compose --env-file ./smartbeehive/docker.prod.env -f ./smartbeehive/docker-compose-prod.yml up --build -d $TAG_COMMIT"
+  environment:
+    name: production
+    url: http://20.115.59.151/
+  only:
+    - main
+
