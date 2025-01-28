@@ -29,3 +29,5 @@ yarn-error.log*
 .yarn
 
 package-lock.json
+
+.gitlab-ci.yml
